@@ -7,7 +7,7 @@ from ..map import TradeMap
 from ..events import WeatherEvent, PirateEvent, CityEvent
 from .update import update_simulation
 from .trading import perform_trading_strategy
-from .visualization import plot_city_prices, plot_ship_gold, plot_map
+from .visualization import plot_city_prices, plot_ship_gold, plot_map, plot_currency_history
 
 class TradeSimulation:
     def __init__(self, cities: List[City], ships: List[Ship], trade_map: TradeMap = None):
@@ -22,6 +22,12 @@ class TradeSimulation:
             self.trade_map = trade_map
         else:
             self.trade_map = self._generate_map(cities)
+        
+        # 货币系统
+        self.currency_supply = 10000 * len(cities)  # 初始货币供应量
+        self.currency_supply_history = [self.currency_supply]  # 货币供应量历史
+        self.global_inflation_rate = 0.0  # 全局通货膨胀率
+        self.global_inflation_history = [0.0]  # 全局通货膨胀率历史
             
         self._init_events()
     
@@ -86,9 +92,52 @@ class TradeSimulation:
         # 更新航线状态（每10天更新一次）
         if self.day % 10 == 0:
             self.trade_map.update_route_conditions()
+        
+        # 更新货币系统
+        self._update_currency_system()
             
         update_simulation(self)
         self.day += 1
+    
+    def _update_currency_system(self):
+        """更新货币系统"""
+        # 每30天调整一次货币供应量
+        if self.day % 30 == 0:
+            # 计算船只和城市的总财富
+            ships_wealth = sum(ship.gold for ship in self.ships.values())
+            
+            # 根据总财富和当前货币供应量之间的关系调整通货膨胀率
+            wealth_to_supply_ratio = ships_wealth / max(1, self.currency_supply)
+            
+            # 调整货币供应量
+            if wealth_to_supply_ratio > 0.5:  # 财富占比大，可能需要增加货币供应
+                supply_change = random.uniform(0.01, 0.03)  # 1%-3%的增长
+            else:  # 财富占比小，减少货币供应增长
+                supply_change = random.uniform(-0.01, 0.02)  # -1%到2%的变化
+                
+            # 应用随机因素，有小概率出现大幅增长或收缩
+            if random.random() < 0.05:  # 5%的概率
+                supply_change = random.uniform(-0.05, 0.08)  # 大幅波动
+                
+            # 更新货币供应量
+            self.currency_supply *= (1 + supply_change)
+            self.currency_supply_history.append(self.currency_supply)
+            
+            # 更新全局通货膨胀率
+            self.global_inflation_rate = supply_change
+            self.global_inflation_history.append(self.global_inflation_rate)
+            
+            # 记录货币系统变化
+            if supply_change > 0:
+                direction = "增加"
+            else:
+                direction = "减少"
+            self.event_log.append(f"第{self.day}天: 货币供应量{direction}了{abs(supply_change)*100:.1f}%, 新供应量: {self.currency_supply:.0f}")
+        
+        # 将全局通货膨胀率传递给各个城市
+        for city in self.cities.values():
+            # 城市通货膨胀率受全局影响，但保留各自特性
+            city.inflation_rate = 0.7 * city.inflation_rate + 0.3 * self.global_inflation_rate
     
     def perform_trading_strategy(self, ship):
         """执行交易策略"""
@@ -134,6 +183,10 @@ class TradeSimulation:
     def plot_map(self):
         """绘制贸易地图"""
         plot_map(self)
+        
+    def plot_currency_history(self):
+        """绘制货币系统历史数据"""
+        plot_currency_history(self)
         
     def print_event_log(self):
         """打印事件日志"""

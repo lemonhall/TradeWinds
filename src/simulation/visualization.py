@@ -3,63 +3,32 @@ import numpy as np
 
 def plot_city_prices(simulation, city_name: str):
     """绘制城市商品价格历史"""
+    if city_name not in simulation.cities:
+        return
+    
     city = simulation.cities[city_name]
     
-    # 设置中文显示
-    plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
-    plt.rcParams['axes.unicode_minus'] = False    # 用来正常显示负号
+    # 选择价格波动较大的商品进行展示
+    price_volatility = {}
+    for good, prices in city.price_history.items():
+        if len(prices) > 1:
+            price_volatility[good] = np.std(prices) / np.mean(prices)
     
-    # 创建价格变化热图
-    plt.figure(figsize=(14, 8))
-    plt.subplot(211)  # 分成上下两个子图，上面是线图
+    # 按价格波动排序，只展示波动最大的6种商品
+    top_goods = sorted(price_volatility.items(), key=lambda x: x[1], reverse=True)[:6]
+    top_goods = [good for good, _ in top_goods]
     
-    # 只显示价格波动较大的商品，避免图表过于拥挤
-    price_changes = {}
-    for good in city.base_prices:
-        if len(city.price_history[good]) > 0:
-            price_array = np.array(city.price_history[good])
-            price_changes[good] = (np.max(price_array) - np.min(price_array)) / np.mean(price_array)
+    plt.figure(figsize=(12, 6))
+    for good in top_goods:
+        prices = city.price_history[good]
+        if len(prices) > 1:  # 确保有足够的数据点
+            plt.plot(prices, label=good)
     
-    # 选择价格波动最大的5种商品绘制
-    top_goods = sorted(price_changes.items(), key=lambda x: x[1], reverse=True)[:5]
-    
-    for good, _ in top_goods:
-        plt.plot(city.price_history[good], label=good)
-    
-    plt.title(f"{city_name}价格历史（波动最大的商品）")
+    plt.title(f"{city_name}的商品价格历史")
     plt.xlabel("天数")
     plt.ylabel("价格")
     plt.legend()
-    plt.grid()
-    
-    # 创建热图，显示所有商品的价格波动
-    plt.subplot(212)
-    
-    # 对所有商品的价格历史数据进行标准化处理
-    normalized_data = []
-    goods_list = []
-    
-    for good in city.base_prices:
-        if len(city.price_history[good]) > 0:
-            price_array = np.array(city.price_history[good])
-            if np.max(price_array) != np.min(price_array):  # 避免除零错误
-                normalized = (price_array - np.min(price_array)) / (np.max(price_array) - np.min(price_array))
-                normalized_data.append(normalized)
-                goods_list.append(good)
-    
-    if normalized_data:
-        data_matrix = np.vstack(normalized_data)
-        plt.imshow(data_matrix, aspect='auto', cmap='viridis')
-        plt.colorbar(label='标准化价格')
-        plt.yticks(range(len(goods_list)), goods_list)
-        plt.title(f"{city_name}所有商品价格热图")
-        plt.xlabel("天数")
-    
-    plt.tight_layout()
-    plt.show()
-    
-    # 绘制商品质量分布图
-    plot_city_quality_distribution(city)
+    plt.grid(True)
 
 def plot_city_quality_distribution(city):
     """绘制城市商品质量分布"""
@@ -106,31 +75,30 @@ def plot_city_quality_distribution(city):
 
 def plot_ship_gold(simulation, ship_name: str):
     """绘制船只资金历史"""
+    if ship_name not in simulation.ships:
+        return
+    
     ship = simulation.ships[ship_name]
     
-    # 设置中文显示
-    plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
-    plt.rcParams['axes.unicode_minus'] = False    # 用来正常显示负号
-    
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(10, 6))
     plt.plot(ship.gold_history)
-    plt.title(f"{ship_name}资金历史")
-    plt.xlabel("交易次数")
+    plt.title(f"{ship_name}的资金历史")
+    plt.xlabel("天数")
     plt.ylabel("金币")
-    plt.grid()
+    plt.grid(True)
     
-    # 添加平均增长趋势线
-    if len(ship.gold_history) > 1:
-        x = np.arange(len(ship.gold_history))
-        z = np.polyfit(x, ship.gold_history, 1)
-        p = np.poly1d(z)
-        plt.plot(x, p(x), "r--", label=f"增长趋势: {z[0]:.2f}/次")
-        plt.legend()
+    # 添加事件标记
+    events = [t for t in ship.trade_history if t["type"] == "route"]
     
-    plt.show()
-    
-    # 绘制船只交易历史和商品质量偏好图
-    plot_ship_trading_history(ship)
+    for i, event in enumerate(events):
+        if i > 0 and i < len(ship.gold_history):
+            try:
+                day = events[i-1]["day"] if "day" in events[i-1] else i * 10  # 估计天数
+                plt.axvline(x=day, color='r', linestyle='--', alpha=0.3)
+                plt.text(day, ship.gold_history[i], f"{event['from']}->{event['to']}", 
+                         fontsize=8, rotation=45, ha='right')
+            except (IndexError, KeyError):
+                pass  # 忽略数据不完整的情况
 
 def plot_ship_trading_history(ship):
     """绘制船只交易历史和质量偏好"""
@@ -190,64 +158,83 @@ def plot_ship_trading_history(ship):
     plt.show()
 
 def plot_map(simulation):
-    """绘制贸易地图，显示城市位置和航线"""
-    # 设置中文显示
-    plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
-    plt.rcParams['axes.unicode_minus'] = False    # 用来正常显示负号
-    
+    """绘制贸易地图"""
     plt.figure(figsize=(12, 10))
     
-    # 获取城市坐标
-    city_coords = simulation.trade_map.city_coords
-    
-    # 绘制城市
-    for city_name, (x, y) in city_coords.items():
-        plt.plot(x, y, 'ro', markersize=10)
-        plt.text(x+5, y+5, city_name, fontsize=12)
+    # 绘制城市节点
+    for city_name, (x, y) in simulation.trade_map.city_coords.items():
+        plt.scatter(x, y, s=200, alpha=0.7)
+        plt.text(x, y+5, city_name, ha='center', fontsize=10)
     
     # 绘制航线
-    routes = simulation.get_all_routes()
-    for route in routes:
-        from_city, to_city = route['from'], route['to']
-        x1, y1 = city_coords[from_city]
-        x2, y2 = city_coords[to_city]
-        
-        # 获取航线状态来确定线条颜色
-        conditions = route.get('conditions', {})
-        danger = conditions.get('危险度', 0.3)
-        
-        # 颜色由绿色(安全)到红色(危险)渐变
-        color = (danger, 1-danger, 0)
-        
-        # 绘制航线
-        plt.plot([x1, x2], [y1, y2], '-', color=color, alpha=0.7, linewidth=1.5)
-        
-        # 在航线中间添加距离标签
-        mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
-        distance = route.get('distance', 0)
-        plt.text(mid_x, mid_y, f'{distance:.1f}', fontsize=8, 
-                 bbox=dict(facecolor='white', alpha=0.7))
+    for (city_a, city_b), conditions in simulation.trade_map.route_conditions.items():
+        if city_a in simulation.trade_map.city_coords and city_b in simulation.trade_map.city_coords:
+            x1, y1 = simulation.trade_map.city_coords[city_a]
+            x2, y2 = simulation.trade_map.city_coords[city_b]
+            
+            # 根据航线状态调整线条样式
+            danger_level = conditions.get('危险度', 0)
+            sea_condition = conditions.get('海况', 0)
+            
+            line_width = 1 + (1 - danger_level) * 2  # 危险程度越高，线越细
+            
+            # 根据海况选择线条样式
+            if sea_condition > 0.6:  # 风暴频发
+                line_style = ':'  # 暴风雨用点线
+                color = 'blue'
+            elif sea_condition > 0.4:  # 波涛汹涌
+                line_style = '--'  # 雾用虚线
+                color = 'gray'
+            elif sea_condition < 0.2:  # 海面平静
+                line_style = '-'  # 好天气用实线
+                color = 'green'
+            else:
+                line_style = '-'
+                color = 'black'
+            
+            plt.plot([x1, x2], [y1, y2], linestyle=line_style, 
+                     linewidth=line_width, color=color, alpha=0.5)
+            
+            # 添加距离标记
+            distance = simulation.trade_map.get_distance(city_a, city_b)
+            mid_x, mid_y = (x1 + x2) / 2, (y1 + y2) / 2
+            plt.text(mid_x, mid_y, f"{distance:.1f}", fontsize=8, 
+                     ha='center', va='center', bbox=dict(facecolor='white', alpha=0.7))
     
-    # 添加船只位置
-    for ship_name, ship in simulation.ships.items():
-        if ship.current_city and ship.current_city.name in city_coords:
-            city_name = ship.current_city.name
-            x, y = city_coords[city_name]
-            plt.plot(x, y, 'b^', markersize=8)
-            plt.text(x-5, y-10, ship_name, fontsize=8, color='blue')
-    
-    plt.title('贸易地图')
-    plt.xlabel('X 坐标')
-    plt.ylabel('Y 坐标')
+    plt.title("贸易地图")
+    plt.axis('equal')  # 保持比例
     plt.grid(True, linestyle='--', alpha=0.7)
-    plt.axis('equal')  # 确保比例一致
     
-    # 创建图例
-    plt.plot([], [], 'ro', label='城市')
-    plt.plot([], [], 'b^', label='船只位置')
-    plt.plot([], [], '-g', label='安全航线')
-    plt.plot([], [], '-r', label='危险航线')
+    # 添加图例 - 修正格式问题
+    plt.plot([], [], color='green', linestyle='-', label='晴朗')
+    plt.plot([], [], color='blue', linestyle=':', label='暴风雨')
+    plt.plot([], [], color='gray', linestyle='--', label='大雾')
+    plt.legend(loc='best')
+
+def plot_currency_history(simulation):
+    """绘制货币系统历史数据"""
+    # 绘制货币供应量历史
+    plt.figure(figsize=(10, 6))
+    plt.plot(simulation.currency_supply_history)
+    plt.title("货币供应量历史")
+    plt.xlabel("天数")
+    plt.ylabel("供应量")
+    plt.grid(True)
+    
+    # 绘制全局通货膨胀率历史
+    plt.figure(figsize=(10, 6))
+    plt.plot(simulation.global_inflation_history)
+    plt.title("全局通货膨胀率历史")
+    plt.xlabel("天数")
+    plt.ylabel("通货膨胀率")
+    plt.grid(True)
+    
+    # 绘制各城市货币价值历史
+    plt.figure(figsize=(12, 6))
+    for city_name, city in simulation.cities.items():
+        plt.plot(city.currency_value_history, label=city_name)
+    plt.title("各城市货币价值变化")
+    plt.xlabel("天数")
+    plt.ylabel("货币价值(相对标准)")
     plt.legend()
-    
-    plt.tight_layout()
-    plt.show() 
+    plt.grid(True) 

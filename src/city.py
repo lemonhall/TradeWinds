@@ -35,6 +35,15 @@ class City:
         # 城市特产和擅长的商品质量
         self.specialty_goods = self._generate_specialties(list(base_prices.keys()))
         
+        # 通货膨胀相关属性
+        self.inflation_rate = 0.0  # 初始通货膨胀率
+        self.inflation_history = []  # 记录通货膨胀率历史
+        
+        # 货币价值相关属性
+        self.currency_name = f"{name}币"  # 城市货币名称
+        self.currency_value = 1.0  # 初始货币价值（相对于标准货币）
+        self.currency_value_history = [1.0]  # 货币价值历史
+        
         # 初始化库存为7天的产量
         for good, amount in production.items():
             self._add_inventory_with_quality(good, amount * 7)
@@ -82,6 +91,12 @@ class City:
         for good, amount in self.consumption.items():
             self._consume_inventory(good, amount)
         
+        # 更新通货膨胀率
+        self._update_inflation()
+        
+        # 更新货币价值
+        self._update_currency_value()
+        
         # 根据供需关系调整价格
         for good in self.base_prices:
             # 避免除零错误，确保消费量至少为一个很小的值
@@ -102,7 +117,10 @@ class City:
             sigmoid_input = np.clip((supply_ratio - 1) * 2, -10, 10) # 限制输入范围
             price_adjustment = 1.0 / (1 + np.exp(-sigmoid_input)) 
             
-            self.current_prices[good] = max(0.1, self.base_prices[good] * price_change * price_adjustment)
+            # 应用通货膨胀影响
+            inflation_factor = 1.0 + self.inflation_rate
+            
+            self.current_prices[good] = max(0.1, self.base_prices[good] * price_change * price_adjustment * inflation_factor)
             self.price_history[good].append(self.current_prices[good])
             self.inventory_history[good].append(self.inventory.get(good, 0))
     
@@ -254,3 +272,67 @@ class City:
         """修改商品价格乘数，用于事件效果"""
         if good in self.current_prices:
             self.current_prices[good] = self.current_prices[good] * multiplier 
+    
+    def _update_inflation(self):
+        """更新城市的通货膨胀率"""
+        # 基础通货膨胀变化，范围在 -0.002 到 0.005 之间
+        inflation_change = random.uniform(-0.002, 0.005)
+        
+        # 库存因素：总库存与消费需求比例影响通货膨胀
+        total_inventory = sum(self.inventory.values())
+        total_consumption = sum(self.consumption.values()) * 7  # 7天消费量
+        if total_consumption > 0 and total_inventory > 0:
+            inventory_ratio = total_inventory / total_consumption
+            # 库存越少，通货膨胀越高
+            if inventory_ratio < 0.8:
+                inflation_change += 0.002
+            elif inventory_ratio > 1.5:
+                inflation_change -= 0.001
+        
+        # 更新通货膨胀率，确保在合理范围内 (-0.05 到 0.1)
+        self.inflation_rate = max(-0.05, min(0.1, self.inflation_rate + inflation_change))
+        self.inflation_history.append(self.inflation_rate)
+        
+        # 保持历史记录在合理范围内
+        if len(self.inflation_history) > 365:  # 保留一年的数据
+            self.inflation_history.pop(0) 
+    
+    def _update_currency_value(self):
+        """更新城市货币价值"""
+        # 货币价值受通货膨胀率影响
+        value_change = -self.inflation_rate * 0.5  # 通货膨胀率越高，货币价值越低
+        
+        # 贸易影响
+        total_inventory = sum(self.inventory.values())
+        if total_inventory > 0:
+            # 库存丰富的城市货币价值相对更高
+            inventory_factor = min(0.001, 0.0001 * total_inventory / 1000)
+            value_change += inventory_factor
+        
+        # 城市特产影响货币价值
+        specialty_inventory = sum(self.inventory.get(good, 0) for good in self.specialty_goods)
+        if specialty_inventory > 0:
+            specialty_factor = min(0.002, 0.0002 * specialty_inventory / 100)
+            value_change += specialty_factor
+        
+        # 应用随机波动
+        random_factor = random.uniform(-0.002, 0.002)
+        value_change += random_factor
+        
+        # 更新货币价值，确保在合理范围内（0.5-2.0）
+        self.currency_value = max(0.5, min(2.0, self.currency_value * (1 + value_change)))
+        self.currency_value_history.append(self.currency_value)
+        
+        # 保持历史记录在合理范围内
+        if len(self.currency_value_history) > 365:  # 保留一年的数据
+            self.currency_value_history.pop(0)
+            
+    def get_exchange_rate(self, other_city: 'City') -> float:
+        """获取与另一个城市的货币兑换率"""
+        # 兑换率 = 本城市货币价值 / 另一个城市货币价值
+        return self.currency_value / other_city.currency_value
+        
+    def convert_currency(self, amount: float, target_city: 'City') -> float:
+        """将本城市货币转换为目标城市货币"""
+        exchange_rate = self.get_exchange_rate(target_city)
+        return amount / exchange_rate 

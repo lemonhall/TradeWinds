@@ -1,6 +1,7 @@
 import random
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import os
 
 from src.city import City
 from src.ship import Ship
@@ -12,6 +13,9 @@ plt.rcParams['axes.unicode_minus'] = False    # 用来正常显示负号
 
 # 示例使用
 if __name__ == "__main__":
+    # 创建输出目录（如果不存在）
+    os.makedirs("outputs/images", exist_ok=True)
+    
     # 定义商品
     goods = [
         "香料", "丝绸", "宝石", "铁矿", "粮食", 
@@ -118,6 +122,35 @@ if __name__ == "__main__":
     print("\n====== 模拟期间发生的随机事件 ======")
     simulation.print_event_log()
     
+    # 显示货币系统信息
+    print("\n====== 货币系统信息 ======")
+    print(f"最终货币供应量: {simulation.currency_supply:.0f}")
+    print(f"全局通货膨胀率: {simulation.global_inflation_rate*100:.2f}%")
+    print("\n城市通货膨胀率:")
+    for city_name, city in simulation.cities.items():
+        print(f"  {city_name}: {city.inflation_rate*100:.2f}%")
+        
+    # 显示城市货币价值和兑换率
+    print("\n城市货币价值:")
+    for city_name, city in simulation.cities.items():
+        print(f"  {city_name}({city.currency_name}): {city.currency_value:.4f}")
+        
+    print("\n城市间货币兑换率(行/列):")
+    city_list = list(simulation.cities.values())
+    # 打印表头
+    header = "          "
+    for city in city_list:
+        header += f"{city.name:10}"
+    print(header)
+    
+    # 打印兑换率表格
+    for city1 in city_list:
+        row = f"{city1.name:10}"
+        for city2 in city_list:
+            exchange_rate = city1.get_exchange_rate(city2)
+            row += f"{exchange_rate:10.4f}"
+        print(row)
+    
     # 打印商品质量分布
     print("\n====== 商品质量分布 ======")
     for city in cities:
@@ -131,48 +164,47 @@ if __name__ == "__main__":
                 print()
     
     # 绘制结果
-    simulation.plot_city_prices("里斯本")
-    simulation.plot_ship_gold("海蛇号")
-    simulation.plot_ship_gold("海狮号")
-    
-    # 分析利润最高的商品
-    print("\n====== 船只交易分析 ======")
-    for ship_name, ship in simulation.ships.items():
-        if not ship.trade_history:
-            continue
-            
-        profits_by_good = {}
-        quality_profits = {"粗糙": 0, "普通": 0, "精良": 0, "极品": 0}
-        
-        buy_transactions = [t for t in ship.trade_history if t["type"] == "buy"]
-        sell_transactions = [t for t in ship.trade_history if t["type"] == "sell"]
-        
-        for buy in buy_transactions:
-            good = buy["good"]
-            if good not in profits_by_good:
-                profits_by_good[good] = {"买入总额": 0, "卖出总额": 0, "利润": 0}
-            profits_by_good[good]["买入总额"] += buy["amount"] * buy["price"]
-            
-        for sell in sell_transactions:
-            good = sell["good"]
-            if good in profits_by_good:
-                profits_by_good[good]["卖出总额"] += sell["amount"] * sell["price"]
-                profits_by_good[good]["利润"] = profits_by_good[good]["卖出总额"] - profits_by_good[good]["买入总额"]
-                
-            quality = sell["quality"]
-            if quality in quality_profits:
-                quality_profits[quality] += sell["amount"] * sell["price"]
-        
-        print(f"\n{ship_name}的交易分析:")
-        sorted_goods = sorted(profits_by_good.items(), key=lambda x: x[1]["利润"], reverse=True)
-        for good, data in sorted_goods[:3]:  # 只显示前3名
-            if data["买入总额"] > 0:
-                profit_margin = (data["利润"] / data["买入总额"]) * 100
-                print(f"  {good}: 利润 {data['利润']:.1f} 金币 (利润率: {profit_margin:.1f}%)")
-        
-        print(f"  质量收益分析:")
-        for quality, profit in quality_profits.items():
-            if profit > 0:
-                print(f"    {quality}: {profit:.1f} 金币")
-    
-    plt.show() # 显示所有图表 
+    print("\n========== 绘制模拟结果 ==========")
+
+    # 为多个城市绘制价格历史
+    key_cities = ["里斯本", "威尼斯", "君士坦丁堡", "亚历山大", "热那亚"]
+    for city_name in key_cities:
+        if city_name in simulation.cities:
+            simulation.plot_city_prices(city_name)
+            plt.tight_layout()
+            plt.savefig(f"outputs/images/city_prices_{city_name}.png")
+            plt.close()
+            print(f"- 已保存{city_name}的价格历史图表")
+
+    # 为所有船只绘制资金历史
+    for ship_name in simulation.ships:
+        simulation.plot_ship_gold(ship_name)
+        plt.tight_layout()
+        plt.savefig(f"outputs/images/ship_gold_{ship_name}.png")
+        plt.close()
+        print(f"- 已保存{ship_name}的资金历史图表")
+
+    # 绘制贸易地图
+    simulation.plot_map()
+    plt.tight_layout()
+    plt.savefig("outputs/images/trade_map.png")
+    plt.close()
+    print("- 已保存贸易地图")
+
+    # 绘制货币系统历史数据
+    simulation.plot_currency_history()
+    plt.tight_layout()
+    plt.savefig("outputs/images/currency_supply.png")
+    plt.close()
+    plt.tight_layout()
+    plt.savefig("outputs/images/global_inflation.png") 
+    plt.close()
+    plt.tight_layout()
+    plt.savefig("outputs/images/city_currency_values.png")
+    plt.close()
+    print("- 已保存货币系统相关图表")
+
+    print("\n所有图表已保存到 outputs/images 目录。")
+
+    # 显示所有图表（可选）
+    # plt.show() 
